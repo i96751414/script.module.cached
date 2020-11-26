@@ -43,7 +43,6 @@ def with_values(*values):
     def decorator(func):
         def wrapper(self):
             for value in values:
-                self.subTest("With {} value".format(value))
                 func(self, value)
 
         return wrapper
