@@ -128,15 +128,16 @@ class Cache(_BaseCache):
         return clean_up
 
 
-def cached(expiry_time, cache_type=Cache):
+def cached(expiry_time, ignore_self=False, cache_type=Cache):
     def decorator(func):
         sentinel = object()
         cache = cache_type.get_instance()
 
         @wraps(func)
         def wrapper(*args, **kwargs):
+            key_args = args[1:] if ignore_self else args
             # noinspection PyProtectedMember
-            key = cache._hash_func((args, kwargs))
+            key = cache._hash_func((key_args, kwargs))
             result = cache.get(key, default=sentinel, hashed_key=True)
             if result is sentinel:
                 result = func(*args, **kwargs)
@@ -150,5 +151,5 @@ def cached(expiry_time, cache_type=Cache):
 
 
 # noinspection PyTypeChecker
-def memory_cached(expiry_time):
-    return cached(expiry_time, MemoryCache)
+def memory_cached(expiry_time, instance_method=False):
+    return cached(expiry_time, instance_method, MemoryCache)

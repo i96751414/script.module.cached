@@ -36,7 +36,7 @@ def kodi_mocks():
 
 
 sys.modules.update(kodi_mocks())
-from lib.cached import Cache, MemoryCache, _BaseCache  # noqa
+from lib.cached import Cache, MemoryCache, _BaseCache, cached  # noqa
 
 
 def with_values(*values):
@@ -100,6 +100,38 @@ class CacheTestCase(TestCase):
             for value in data:
                 cache.set(key, value, expiry)
                 self.assertEqual(value, cache.get(key))
+
+    @with_values(Cache, MemoryCache)
+    def test_decorator(self, clazz):
+        return_value = 123456
+        func_duration = 0.1
+        args = (object(),)
+        kwargs = {"kw": object()}
+
+        @cached(datetime.timedelta(seconds=func_duration * 2), cache_type=clazz)
+        def func(*_, **__):
+            time.sleep(func_duration)
+            return return_value
+
+        class Test:
+            @staticmethod
+            @cached(datetime.timedelta(seconds=func_duration * 2), cache_type=clazz)
+            def static_func(*_, **__):
+                time.sleep(func_duration)
+                return return_value
+
+            @cached(datetime.timedelta(seconds=func_duration * 2), ignore_self=True, cache_type=clazz)
+            def func(self, *_, **__):
+                time.sleep(func_duration)
+                return return_value
+
+        for i, f in enumerate((func, Test().static_func, Test().func)):
+            start_time = time.time()
+            self.assertEqual(return_value, f(i, *args, **kwargs))
+            self.assertTrue(time.time() - start_time >= func_duration)
+            start_time = time.time()
+            self.assertEqual(return_value, f(i, *args, **kwargs))
+            self.assertTrue(time.time() - start_time < func_duration)
 
     @staticmethod
     def count(cache, key):
