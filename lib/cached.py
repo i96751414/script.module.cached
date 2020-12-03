@@ -11,7 +11,7 @@ import xbmcaddon
 import xbmcgui
 
 ADDON_DATA = xbmc.translatePath(xbmcaddon.Addon("script.module.cached").getAddonInfo("profile"))
-ADDON_NAME = xbmcaddon.Addon().getAddonInfo("name")
+ADDON_ID = xbmcaddon.Addon().getAddonInfo("id")
 
 if not os.path.exists(ADDON_DATA):
     os.makedirs(ADDON_DATA)
@@ -67,7 +67,7 @@ class _BaseCache(object):
 
 
 class MemoryCache(_BaseCache):
-    def __init__(self, database=ADDON_NAME):
+    def __init__(self, database=ADDON_ID):
         self._window = xbmcgui.Window(10000)
         self._database = database + "."
 
@@ -82,25 +82,20 @@ class MemoryCache(_BaseCache):
 class Cache(_BaseCache):
     _table_name = "cached"
 
-    def __init__(self, database=os.path.join(ADDON_DATA, ADDON_NAME + ".cached.sqlite"),
+    def __init__(self, database=os.path.join(ADDON_DATA, ADDON_ID + ".cached.sqlite"),
                  cleanup_interval=datetime.timedelta(minutes=15)):
-        self._conn = sqlite3.connect(database, detect_types=sqlite3.PARSE_DECLTYPES)
-        self._cursor = self._conn.cursor()
-        self._cursor.execute(
+        self._conn = sqlite3.connect(
+            database, detect_types=sqlite3.PARSE_DECLTYPES, isolation_level=None, check_same_thread=False)
+        self._conn.execute(
             "CREATE TABLE IF NOT EXISTS `{}` ("
             "key TEXT UNIQUE NOT NULL, "
             "data BLOB NOT NULL, "
             "expires TIMESTAMP NOT NULL"
             ")".format(self._table_name))
-        self._conn.commit()
+        self._conn.execute('PRAGMA journal_mode=wal')
         self._cleanup_interval = cleanup_interval
         self._last_cleanup = datetime.datetime.utcnow()
         self.clean_up()
-
-    def _get(self, key):
-        self.check_clean_up()
-        self._cursor.execute("SELECT data, expires FROM `{}` WHERE key = ?".format(self._table_name), (key,))
-        return self._cursor.fetchone()
 
     def _process(self, obj):
         return self._load_func(obj)
@@ -108,21 +103,28 @@ class Cache(_BaseCache):
     def _prepare(self, s):
         return self._dump_func(s)
 
+    def _get(self, key):
+        self.check_clean_up()
+        return self._conn.execute(
+            "SELECT data, expires FROM `{}` WHERE key = ?".format(self._table_name), (key,)).fetchone()
+
     def _set(self, key, data, expires):
         self.check_clean_up()
-        self._cursor.execute(
+        self._conn.execute(
             "INSERT OR REPLACE INTO `{}` (key, data, expires) VALUES(?, ?, ?)".format(self._table_name),
-            (key, data, expires))
-        self._conn.commit()
+            (key, sqlite3.Binary(data), expires))
+
+    @property
+    def needs_cleanup(self):
+        return self._last_cleanup + self._cleanup_interval < datetime.datetime.utcnow()
 
     def clean_up(self):
-        self._cursor.execute(
+        self._conn.execute(
             "DELETE FROM `{}` WHERE expires <= STRFTIME('%Y-%m-%d %H:%M:%f', 'NOW')".format(self._table_name))
-        self._conn.commit()
         self._last_cleanup = datetime.datetime.utcnow()
 
     def check_clean_up(self):
-        clean_up = self._last_cleanup + self._cleanup_interval < datetime.datetime.utcnow()
+        clean_up = self.needs_cleanup
         if clean_up:
             self.clean_up()
         return clean_up

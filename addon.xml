@@ -2,7 +2,6 @@
 <addon id="script.module.cached" name="Cached" provider-name="i96751414" version="0.0.1">
     <requires>
         <import addon="xbmc.python" version="2.24.0"/>
-        <import addon="xbmc.addon" version="16.0.0"/>
     </requires>
     <extension point="xbmc.python.module" library="lib"/>
     <extension point="xbmc.addon.metadata">

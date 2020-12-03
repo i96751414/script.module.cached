@@ -1,8 +1,11 @@
 import datetime
 import os
+import random
 import shutil
+import string
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from unittest import TestCase
 
 try:
@@ -113,7 +116,7 @@ class CacheTestCase(TestCase):
             time.sleep(func_duration)
             return return_value
 
-        class Test:
+        class Test(object):
             @staticmethod
             @cached(datetime.timedelta(seconds=func_duration * 2), cache_type=clazz)
             def static_func(*_, **__):
@@ -133,11 +136,28 @@ class CacheTestCase(TestCase):
             self.assertEqual(return_value, f(i, *args, **kwargs))
             self.assertTrue(time.time() - start_time < func_duration)
 
+    def test_threaded_cache(self):
+        cleanup_interval = datetime.timedelta(milliseconds=200)
+        expiration = datetime.timedelta(milliseconds=500)
+        cache = Cache(os.path.join(DATA_FOLDER, "test_threaded_cache.sqlite"), cleanup_interval=cleanup_interval)
+
+        def target(key, value):
+            cache.set(key, value, expiration)
+            self.assertEqual(value, cache.get(key))
+
+        with ThreadPoolExecutor(20) as pool:
+            futures = [pool.submit(target, self.random_string(20), self.random_string(500)) for _ in range(1000)]
+            for result in futures:
+                result.result()
+
+    @staticmethod
+    def random_string(length):
+        return "".join(random.choice(string.printable) for _ in range(length))
+
     @staticmethod
     def count(cache, key):
-        cache._cursor.execute(
-            "SELECT COUNT(*) FROM `{}` WHERE key = ?".format(cache._table_name), (cache._hash_func(key),))
-        return cache._cursor.fetchone()[0]
+        return cache._conn.execute(
+            "SELECT COUNT(*) FROM `{}` WHERE key = ?".format(cache._table_name), (cache._hash_func(key),)).fetchone()[0]
 
     @staticmethod
     def wait(delay, start_time=None):
