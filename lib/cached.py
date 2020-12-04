@@ -37,9 +37,11 @@ class _BaseCache(object):
             cls.__instance = cls()
         return cls.__instance
 
-    def get(self, key, default=None, hashed_key=False):
+    def get(self, key, default=None, hashed_key=False, identifier=""):
         if not hashed_key:
             key = self._hash_func(key)
+        if identifier:
+            key += identifier
         result = self._get(key)
         ret = default
         if result:
@@ -48,9 +50,11 @@ class _BaseCache(object):
                 ret = self._process(data)
         return ret
 
-    def set(self, key, data, expiry_time, hashed_key=False):
+    def set(self, key, data, expiry_time, hashed_key=False, identifier=""):
         if not hashed_key:
             key = self._hash_func(key)
+        if identifier:
+            key += identifier
         self._set(key, self._prepare(data), datetime.datetime.utcnow() + expiry_time)
 
     def _process(self, obj):
@@ -134,18 +138,20 @@ class LoadingCache(object):
     def __init__(self, expiry_time, loader, cache_type, *args, **kwargs):
         self._expiry_time = expiry_time
         self._loader = loader
+        self._hashed_key = kwargs.pop("hashed_key", False)
+        self._identifier = kwargs.pop("identifier", "")
         self._cache = cache_type(*args, **kwargs)
         self._sentinel = object()
 
-    def get(self, key, hashed_key=False):
-        data = self._cache.get(key, default=self._sentinel, hashed_key=hashed_key)
+    def get(self, key):
+        data = self._cache.get(key, default=self._sentinel, hashed_key=self._hashed_key, identifier=self._identifier)
         if data is self._sentinel:
             data = self._loader(key)
-            self._cache.set(key, data, self._expiry_time, hashed_key=hashed_key)
+            self._cache.set(key, data, self._expiry_time, hashed_key=self._hashed_key, identifier=self._identifier)
         return data
 
 
-def cached(expiry_time, ignore_self=False, cache_type=Cache):
+def cached(expiry_time, ignore_self=False, identifier="", cache_type=Cache):
     def decorator(func):
         sentinel = object()
         cache = cache_type.get_instance()
@@ -155,6 +161,8 @@ def cached(expiry_time, ignore_self=False, cache_type=Cache):
             key_args = args[1:] if ignore_self else args
             # noinspection PyProtectedMember
             key = cache._hash_func((key_args, kwargs))
+            if identifier:
+                key += identifier
             result = cache.get(key, default=sentinel, hashed_key=True)
             if result is sentinel:
                 result = func(*args, **kwargs)
@@ -168,5 +176,5 @@ def cached(expiry_time, ignore_self=False, cache_type=Cache):
 
 
 # noinspection PyTypeChecker
-def memory_cached(expiry_time, instance_method=False):
-    return cached(expiry_time, instance_method, MemoryCache)
+def memory_cached(expiry_time, instance_method=False, identifier=""):
+    return cached(expiry_time, instance_method, identifier, MemoryCache)
