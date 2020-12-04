@@ -130,6 +130,21 @@ class Cache(_BaseCache):
         return clean_up
 
 
+class LoadingCache(object):
+    def __init__(self, expiry_time, loader, cache_type, *args, **kwargs):
+        self._expiry_time = expiry_time
+        self._loader = loader
+        self._cache = cache_type(*args, **kwargs)
+        self._sentinel = object()
+
+    def get(self, key, hashed_key=False):
+        data = self._cache.get(key, default=self._sentinel, hashed_key=hashed_key)
+        if data is self._sentinel:
+            data = self._loader(key)
+            self._cache.set(key, data, self._expiry_time, hashed_key=hashed_key)
+        return data
+
+
 def cached(expiry_time, ignore_self=False, cache_type=Cache):
     def decorator(func):
         sentinel = object()

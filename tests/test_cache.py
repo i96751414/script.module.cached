@@ -4,9 +4,10 @@ import shutil
 import string
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta, datetime
 from unittest import TestCase
+
+from concurrent.futures import ThreadPoolExecutor
 
 try:
     from unittest.mock import Mock
@@ -39,7 +40,7 @@ def kodi_mocks():
 
 
 sys.modules.update(kodi_mocks())
-from lib.cached import Cache, MemoryCache, _BaseCache, cached  # noqa
+from lib.cached import Cache, MemoryCache, _BaseCache, cached, LoadingCache  # noqa
 
 
 def with_values(*values):
@@ -149,6 +150,26 @@ class CacheTestCase(TestCase):
             futures = [pool.submit(target, self.random_string(20), self.random_string(500)) for _ in range(1000)]
             for result in futures:
                 result.result()
+
+    @with_values(Cache, MemoryCache)
+    def test_loading_cache(self, clazz):
+        key, value = "key", "value"
+        func_duration = 0.1
+
+        def loader(k):
+            self.assertEqual(key, k)
+            time.sleep(func_duration)
+            return value
+
+        cache = LoadingCache(timedelta(minutes=15), loader, clazz,
+                             os.path.join(DATA_FOLDER, "test_loading_cache.sqlite"))
+
+        start_time = time.time()
+        self.assertEqual(value, cache.get(key))
+        self.assertTrue(time.time() - start_time >= func_duration)
+        start_time = time.time()
+        self.assertEqual(value, cache.get(key))
+        self.assertTrue(time.time() - start_time < func_duration)
 
     @staticmethod
     def random_string(length):
