@@ -1,4 +1,3 @@
-import datetime
 import os
 import random
 import shutil
@@ -6,6 +5,7 @@ import string
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import timedelta, datetime
 from unittest import TestCase
 
 try:
@@ -71,7 +71,7 @@ class CacheTestCase(TestCase):
     def test_expiry_time(self, clazz):
         cache = clazz(os.path.join(DATA_FOLDER, "test_expiry_time.sqlite"))
         key, value = "key", "value"
-        cache.set(key, value, datetime.timedelta(milliseconds=500))
+        cache.set(key, value, timedelta(milliseconds=500))
         start = time.time()
         self.assertEqual(value, cache.get(key))
         self.wait(0.4, start)
@@ -81,10 +81,9 @@ class CacheTestCase(TestCase):
 
     def test_clean_up(self):
         key, value = "key", "value"
-        cache = Cache(os.path.join(DATA_FOLDER, "test_clean_up.sqlite"),
-                      cleanup_interval=datetime.timedelta(milliseconds=500))
+        cache = Cache(os.path.join(DATA_FOLDER, "test_clean_up.sqlite"), cleanup_interval=timedelta(milliseconds=500))
         start = time.time()
-        cache.set(key, value, datetime.timedelta(milliseconds=100))
+        cache.set(key, value, timedelta(milliseconds=100))
         self.assertFalse(cache.check_clean_up())
         self.assertEqual(1, self.count(cache, key))
         self.wait(0.4, start)
@@ -96,8 +95,9 @@ class CacheTestCase(TestCase):
 
     @with_values(Cache, MemoryCache)
     def test_cache(self, clazz):
-        data = (1, "1", 1.1, True, None, {1}, frozenset([1]), [1], (1,), {1: 2, "1": "2"}, datetime.datetime.now())
-        expiry = datetime.timedelta(minutes=15)
+        data = (1, "1", 1.1, True, None, {1, 3, 2, 4}, frozenset([1, 3, 2, 4]), [1, 3, 2, 4], (1, 3, 2, 4),
+                {1: 2, "1": "2", (1, 3, 2, 4): 1 + 1.4j}, 1 + 1.4j, datetime.now())
+        expiry = timedelta(minutes=15)
         cache = clazz(os.path.join(DATA_FOLDER, "test_cache.sqlite"))
         for key in data:
             for value in data:
@@ -111,19 +111,19 @@ class CacheTestCase(TestCase):
         args = (object(),)
         kwargs = {"kw": object()}
 
-        @cached(datetime.timedelta(seconds=func_duration * 2), cache_type=clazz)
+        @cached(timedelta(seconds=func_duration * 2), cache_type=clazz)
         def func(*_, **__):
             time.sleep(func_duration)
             return return_value
 
         class Test(object):
             @staticmethod
-            @cached(datetime.timedelta(seconds=func_duration * 2), cache_type=clazz)
+            @cached(timedelta(seconds=func_duration * 2), cache_type=clazz)
             def static_func(*_, **__):
                 time.sleep(func_duration)
                 return return_value
 
-            @cached(datetime.timedelta(seconds=func_duration * 2), ignore_self=True, cache_type=clazz)
+            @cached(timedelta(seconds=func_duration * 2), ignore_self=True, cache_type=clazz)
             def func(self, *_, **__):
                 time.sleep(func_duration)
                 return return_value
@@ -137,8 +137,8 @@ class CacheTestCase(TestCase):
             self.assertTrue(time.time() - start_time < func_duration)
 
     def test_threaded_cache(self):
-        cleanup_interval = datetime.timedelta(milliseconds=200)
-        expiration = datetime.timedelta(milliseconds=500)
+        cleanup_interval = timedelta(milliseconds=200)
+        expiration = timedelta(milliseconds=500)
         cache = Cache(os.path.join(DATA_FOLDER, "test_threaded_cache.sqlite"), cleanup_interval=cleanup_interval)
 
         def target(key, value):
