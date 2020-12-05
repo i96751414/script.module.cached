@@ -106,6 +106,16 @@ class CacheTestCase(TestCase):
                 self.assertEqual(value, cache.get(key))
 
     @with_values(Cache, MemoryCache)
+    def test_identifier(self, clazz):
+        key = "key"
+        expiry = timedelta(minutes=15)
+        cache = clazz(os.path.join(DATA_FOLDER, "test_identifier.sqlite"))
+        for i in range(5):
+            identifier = "id{}".format(i)
+            cache.set(key, identifier, expiry, identifier=identifier)
+            self.assertEqual(identifier, cache.get(key, identifier=identifier))
+
+    @with_values(Cache, MemoryCache)
     def test_decorator(self, clazz):
         return_value = 123456
         func_duration = 0.1

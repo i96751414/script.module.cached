@@ -1,8 +1,8 @@
-import datetime
 import os
 import pickle
 import sqlite3
 from base64 import b64encode, b64decode
+from datetime import datetime, timedelta
 from functools import wraps
 from hashlib import sha256
 
@@ -38,24 +38,23 @@ class _BaseCache(object):
         return cls.__instance
 
     def get(self, key, default=None, hashed_key=False, identifier=""):
-        if not hashed_key:
-            key = self._hash_func(key)
-        if identifier:
-            key += identifier
-        result = self._get(key)
+        result = self._get(self._generate_key(key, hashed_key, identifier))
         ret = default
         if result:
             data, expires = result
-            if expires > datetime.datetime.utcnow():
+            if expires > datetime.utcnow():
                 ret = self._process(data)
         return ret
 
     def set(self, key, data, expiry_time, hashed_key=False, identifier=""):
+        self._set(self._generate_key(key, hashed_key, identifier), self._prepare(data), datetime.utcnow() + expiry_time)
+
+    def _generate_key(self, key, hashed_key=False, identifier=""):
         if not hashed_key:
             key = self._hash_func(key)
         if identifier:
             key += identifier
-        self._set(key, self._prepare(data), datetime.datetime.utcnow() + expiry_time)
+        return key
 
     def _process(self, obj):
         return obj
@@ -87,7 +86,7 @@ class Cache(_BaseCache):
     _table_name = "cached"
 
     def __init__(self, database=os.path.join(ADDON_DATA, ADDON_ID + ".cached.sqlite"),
-                 cleanup_interval=datetime.timedelta(minutes=15)):
+                 cleanup_interval=timedelta(minutes=15)):
         self._conn = sqlite3.connect(
             database, detect_types=sqlite3.PARSE_DECLTYPES, isolation_level=None, check_same_thread=False)
         self._conn.execute(
@@ -98,7 +97,7 @@ class Cache(_BaseCache):
             ")".format(self._table_name))
         self._conn.execute('PRAGMA journal_mode=wal')
         self._cleanup_interval = cleanup_interval
-        self._last_cleanup = datetime.datetime.utcnow()
+        self._last_cleanup = datetime.utcnow()
         self.clean_up()
 
     def _process(self, obj):
@@ -120,12 +119,12 @@ class Cache(_BaseCache):
 
     @property
     def needs_cleanup(self):
-        return self._last_cleanup + self._cleanup_interval < datetime.datetime.utcnow()
+        return self._last_cleanup + self._cleanup_interval < datetime.utcnow()
 
     def clean_up(self):
         self._conn.execute(
             "DELETE FROM `{}` WHERE expires <= STRFTIME('%Y-%m-%d %H:%M:%f', 'NOW')".format(self._table_name))
-        self._last_cleanup = datetime.datetime.utcnow()
+        self._last_cleanup = datetime.utcnow()
 
     def check_clean_up(self):
         clean_up = self.needs_cleanup
@@ -160,9 +159,7 @@ def cached(expiry_time, ignore_self=False, identifier="", cache_type=Cache):
         def wrapper(*args, **kwargs):
             key_args = args[1:] if ignore_self else args
             # noinspection PyProtectedMember
-            key = cache._hash_func((key_args, kwargs))
-            if identifier:
-                key += identifier
+            key = cache._generate_key((key_args, kwargs), identifier=identifier)
             result = cache.get(key, default=sentinel, hashed_key=True)
             if result is sentinel:
                 result = func(*args, **kwargs)
