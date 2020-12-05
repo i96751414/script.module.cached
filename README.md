@@ -7,6 +7,34 @@ uses [pickle](https://docs.python.org/3/library/pickle.html) to serialize/deseri
 cache keys, however all of this can be modified. For instance, one could use json to serialize/deserialize an object and
 provide a custom hashing function or even a plain key.
 
+## API
+
+#### Classes
+
+- **MemoryCache** - In memory cache.
+- **Cache** - File cache (using sqlite3).
+- **LoadingCache** - Loading cache which may use either `MemoryCache` or `Cache` as caching engine.
+
+#### Methods
+
+###### MemoryCache / Cache
+
+- **set**(*key, data, expiry_time, hashed_key=False, identifier=""*)
+
+  Cache `data` using `key` as the entry key and `expiry_time` as the expiry time. If `hashed_key` is true. the key is
+  assumed to be hashed already. `identifier` is useful in cases where there may exist different cache entries with the
+  same key.
+
+- **get**(*key, default=None, hashed_key=False, identifier=""*)
+
+  Get the cached entry data. In case the entry does not exist/is expired, `default` is returned.
+
+###### LoadingCache
+
+- **get**(*key*)
+
+  Get the cached entry data. If the entry does not exist or is expired, a new one will be loaded onto cache.
+
 ## Usage
 
 Import the addon in `addon.xml`:
