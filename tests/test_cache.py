@@ -105,6 +105,16 @@ class CacheTestCase(TestCase):
                 cache.set(key, value, expiry)
                 self.assertEqual(value, cache.get(key))
 
+    def test_cache_version(self):
+        cache = Cache(os.path.join(DATA_FOLDER, "test_cache_version.sqlite"))
+        cache2 = Cache(os.path.join(DATA_FOLDER, "test_cache_version.sqlite"))
+        self.assertEqual(0, cache.version)
+        self.assertEqual(0, cache2.version)
+        version = 100
+        cache._set_version(version)
+        self.assertEqual(version, cache.version)
+        self.assertEqual(version, cache2.version)
+
     @with_values(Cache, MemoryCache)
     def test_identifier(self, clazz):
         key = "key"

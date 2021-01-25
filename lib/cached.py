@@ -129,6 +129,13 @@ class Cache(_BaseCache):
             "INSERT OR REPLACE INTO `{}` (key, data, expires) VALUES(?, ?, ?)".format(self._table_name),
             (key, sqlite3.Binary(data), expires))
 
+    def _set_version(self, version):
+        self._conn.execute("PRAGMA user_version={}".format(version))
+
+    @property
+    def version(self):
+        return self._conn.execute("PRAGMA user_version").fetchone()[0]
+
     @property
     def needs_cleanup(self):
         return self._last_cleanup + self._cleanup_interval < datetime.utcnow()
