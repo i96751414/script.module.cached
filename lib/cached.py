@@ -1,6 +1,7 @@
 import os
 import pickle
 import sqlite3
+import threading
 from base64 import b64encode, b64decode
 from datetime import datetime, timedelta
 from functools import wraps
@@ -92,25 +93,52 @@ class MemoryCache(_BaseCache):
         self._window.setProperty(self._database + key, b64encode(self._dump_func((data, expires))).decode())
 
 
+def _local_attr(attribute):
+    def setter(self, value):
+        setattr(self._local, attribute, value)
+
+    def getter(self):
+        return getattr(self._local, attribute, None)
+
+    return property(getter, setter)
+
+
 class Cache(_BaseCache):
     _table_name = "cached"
 
     def __init__(self, database=os.path.join(ADDON_DATA, ADDON_ID + ".cached.sqlite"),
                  cleanup_interval=timedelta(minutes=15)):
-        self._conn = sqlite3.connect(
-            database, detect_types=sqlite3.PARSE_DECLTYPES, isolation_level=None, check_same_thread=False)
-        self._conn.execute(
+        self._database = database
+        self._cleanup_interval = cleanup_interval
+        self._last_cleanup = datetime.utcnow()
+        self._local = threading.local()
+        self.clean_up()
+
+    _local_pid = _local_attr("pid")
+    _local_conn = _local_attr("conn")
+
+    @property
+    def _conn(self):
+        pid = os.getpid()
+        if pid != self._local_pid:
+            self.close()
+            self._local_pid = pid
+
+        return self._local_conn or self._init_conn()
+
+    def _init_conn(self):
+        conn = self._local_conn = sqlite3.connect(
+            self._database, detect_types=sqlite3.PARSE_DECLTYPES, isolation_level=None)
+        conn.execute(
             "CREATE TABLE IF NOT EXISTS `{}` ("
             "key TEXT PRIMARY KEY NOT NULL, "
             "data BLOB NOT NULL, "
             "expires TIMESTAMP NOT NULL"
             ")".format(self._table_name))
-        # self._conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS key_idx ON `{}` (key)'.format(self._table_name))
+        # conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS key_idx ON `{}` (key)'.format(self._table_name))
         for k, v in SQLITE_SETTINGS.items():
-            self._conn.execute("PRAGMA {}={}".format(k, v))
-        self._cleanup_interval = cleanup_interval
-        self._last_cleanup = datetime.utcnow()
-        self.clean_up()
+            conn.execute("PRAGMA {}={}".format(k, v))
+        return conn
 
     def _process(self, obj):
         return self._load_func(obj)
@@ -150,6 +178,12 @@ class Cache(_BaseCache):
         if clean_up:
             self.clean_up()
         return clean_up
+
+    def close(self):
+        con = self._local_conn
+        if con is not None:
+            con.close()
+            self._local_conn = None
 
 
 class LoadingCache(object):
