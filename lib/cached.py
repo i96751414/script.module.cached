@@ -16,9 +16,19 @@ ADDON_ID = xbmcaddon.Addon().getAddonInfo("id")
 if not os.path.exists(ADDON_DATA):
     os.makedirs(ADDON_DATA)
 
+# Sqlite pragmas, according to https://www.sqlite.org/pragma.html
+SQLITE_SETTINGS = {
+    "journal_mode": "wal",
+    "auto_vacuum": "full",
+    "cache_size": 8 * 1024,
+    "mmap_size": 64 * 1024 * 1024,
+    "synchronous": "normal",
+}
+
 
 def pickle_hash(obj):
     data = pickle.dumps(obj)
+    # We could also use zlib.adler32 here
     h = sha256()
     h.update(data)
     return h.hexdigest()
@@ -91,11 +101,13 @@ class Cache(_BaseCache):
             database, detect_types=sqlite3.PARSE_DECLTYPES, isolation_level=None, check_same_thread=False)
         self._conn.execute(
             "CREATE TABLE IF NOT EXISTS `{}` ("
-            "key TEXT UNIQUE NOT NULL, "
+            "key TEXT PRIMARY KEY NOT NULL, "
             "data BLOB NOT NULL, "
             "expires TIMESTAMP NOT NULL"
             ")".format(self._table_name))
-        self._conn.execute('PRAGMA journal_mode=wal')
+        # self._conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS key_idx ON `{}` (key)'.format(self._table_name))
+        for k, v in SQLITE_SETTINGS.items():
+            self._conn.execute("PRAGMA {}={}".format(k, v))
         self._cleanup_interval = cleanup_interval
         self._last_cleanup = datetime.utcnow()
         self.clean_up()
