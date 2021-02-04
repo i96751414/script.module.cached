@@ -7,6 +7,13 @@ uses [pickle](https://docs.python.org/3/library/pickle.html) to serialize/deseri
 cache keys, however all of this can be modified. For instance, one could use json to serialize/deserialize an object and
 provide a custom hashing function or even a plain key.
 
+## Installation
+
+This addon is made available on its [repository](https://github.com/i96751414/repository.github#installation).
+
+Although **not recommended**, one can install the addon without installing its repository. To do so, get the
+[latest release](https://github.com/i96751414/script.module.cached/releases/latest) from github.
+
 ## API
 
 #### Classes
