@@ -1,6 +1,7 @@
 import os
 import pickle
 import sqlite3
+import sys
 from base64 import b64encode, b64decode
 from datetime import datetime, timedelta
 from functools import wraps
@@ -10,9 +11,12 @@ import xbmc
 import xbmcaddon
 import xbmcgui
 
+PY3 = sys.version_info.major >= 3
 ADDON_DATA = xbmc.translatePath(xbmcaddon.Addon("script.module.cached").getAddonInfo("profile"))
 ADDON_ID = xbmcaddon.Addon().getAddonInfo("id")
 
+if not PY3:
+    ADDON_DATA = ADDON_DATA.decode("utf-8")
 if not os.path.exists(ADDON_DATA):
     os.makedirs(ADDON_DATA)
 
@@ -58,6 +62,9 @@ class _BaseCache(object):
 
     def set(self, key, data, expiry_time, hashed_key=False, identifier=""):
         self._set(self._generate_key(key, hashed_key, identifier), self._prepare(data), datetime.utcnow() + expiry_time)
+
+    def close(self):
+        pass
 
     def _generate_key(self, key, hashed_key=False, identifier=""):
         if not hashed_key:
@@ -151,6 +158,9 @@ class Cache(_BaseCache):
             self.clean_up()
         return clean_up
 
+    def close(self):
+        self._conn.close()
+
 
 class LoadingCache(object):
     def __init__(self, expiry_time, loader, cache_type, *args, **kwargs):
@@ -167,6 +177,9 @@ class LoadingCache(object):
             data = self._loader(key)
             self._cache.set(key, data, self._expiry_time, hashed_key=self._hashed_key, identifier=self._identifier)
         return data
+
+    def close(self):
+        self._cache.close()
 
 
 def cached(expiry_time, ignore_self=False, identifier="", cache_type=Cache):

@@ -57,6 +57,7 @@ def with_values(*values):
 class CacheTestCase(TestCase):
     @classmethod
     def tearDownClass(cls):
+        Cache.get_instance().close()
         if os.path.exists(DATA_FOLDER):
             shutil.rmtree(DATA_FOLDER)
 
