@@ -100,18 +100,16 @@ class MemoryCache(_BaseCache):
 
 
 class Cache(_BaseCache):
-    _table_name = "cached"
-
     def __init__(self, database=os.path.join(ADDON_DATA, ADDON_ID + ".cached.sqlite"),
                  cleanup_interval=timedelta(minutes=15)):
         self._conn = sqlite3.connect(
             database, detect_types=sqlite3.PARSE_DECLTYPES, isolation_level=None, check_same_thread=False)
         self._conn.execute(
-            "CREATE TABLE IF NOT EXISTS `{}` ("
+            "CREATE TABLE IF NOT EXISTS `cached` ("
             "key TEXT PRIMARY KEY NOT NULL, "
             "data BLOB NOT NULL, "
             "expires TIMESTAMP NOT NULL"
-            ")".format(self._table_name))
+            ")")
         # self._conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS key_idx ON `{}` (key)'.format(self._table_name))
         for k, v in SQLITE_SETTINGS.items():
             self._conn.execute("PRAGMA {}={}".format(k, v))
@@ -128,12 +126,12 @@ class Cache(_BaseCache):
     def _get(self, key):
         self.check_clean_up()
         return self._conn.execute(
-            "SELECT data, expires FROM `{}` WHERE key = ?".format(self._table_name), (key,)).fetchone()
+            "SELECT data, expires FROM `cached` WHERE key = ?", (key,)).fetchone()
 
     def _set(self, key, data, expires):
         self.check_clean_up()
         self._conn.execute(
-            "INSERT OR REPLACE INTO `{}` (key, data, expires) VALUES(?, ?, ?)".format(self._table_name),
+            "INSERT OR REPLACE INTO `cached` (key, data, expires) VALUES(?, ?, ?)",
             (key, sqlite3.Binary(data), expires))
 
     def _set_version(self, version):
@@ -149,7 +147,7 @@ class Cache(_BaseCache):
 
     def clean_up(self):
         self._conn.execute(
-            "DELETE FROM `{}` WHERE expires <= STRFTIME('%Y-%m-%d %H:%M:%f', 'NOW')".format(self._table_name))
+            "DELETE FROM `cached` WHERE expires <= STRFTIME('%Y-%m-%d %H:%M:%f', 'NOW')")
         self._last_cleanup = datetime.utcnow()
 
     def check_clean_up(self):

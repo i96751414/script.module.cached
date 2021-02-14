@@ -1,6 +1,7 @@
 # script.module.cached
 
 [![Build Status](https://github.com/i96751414/script.module.cached/workflows/build/badge.svg)](https://github.com/i96751414/script.module.cached/actions?query=workflow%3Abuild)
+[![Codacy Badge](https://app.codacy.com/project/badge/Grade/ec7ad5f1d3b3432d9df2541aec27801a)](https://www.codacy.com/gh/i96751414/script.module.cached/dashboard?utm_source=github.com&amp;utm_medium=referral&amp;utm_content=i96751414/script.module.cached&amp;utm_campaign=Badge_Grade)
 
 A simple cache module for Kodi. It allows both file/memory caching. By default, it
 uses [pickle](https://docs.python.org/3/library/pickle.html) to serialize/deserialize objects and sha256 to generate the
@@ -16,31 +17,31 @@ Although **not recommended**, one can install the addon without installing its r
 
 ## API
 
-#### Classes
+### Classes
 
-- **MemoryCache** - In memory cache.
-- **Cache** - File cache (using sqlite3).
-- **LoadingCache** - Loading cache which may use either `MemoryCache` or `Cache` as caching engine.
+-   **MemoryCache** - In memory cache.
+-   **Cache** - File cache (using sqlite3).
+-   **LoadingCache** - Loading cache which may use either `MemoryCache` or `Cache` as caching engine.
 
-#### Methods
+### Methods
 
-###### MemoryCache / Cache
+#### MemoryCache / Cache
 
-- **set**(*key, data, expiry_time, hashed_key=False, identifier=""*)
+-   **set**(*key, data, expiry_time, hashed_key=False, identifier=""*)
 
-  Cache `data` using `key` as the entry key and `expiry_time` as the expiry time. If `hashed_key` is true. the key is
-  assumed to be hashed already. `identifier` is useful in cases where there may exist different cache entries with the
-  same key.
+    Cache `data` using `key` as the entry key and `expiry_time` as the expiry time. If `hashed_key` is true. the key is
+    assumed to be hashed already. `identifier` is useful in cases where there may exist different cache entries with the
+    same key.
 
-- **get**(*key, default=None, hashed_key=False, identifier=""*)
+-   **get**(*key, default=None, hashed_key=False, identifier=""*)
 
-  Get the cached entry data. In case the entry does not exist/is expired, `default` is returned.
+    Get the cached entry data. In case the entry does not exist/is expired, `default` is returned.
 
-###### LoadingCache
+#### LoadingCache
 
-- **get**(*key*)
+-   **get**(*key*)
 
-  Get the cached entry data. If the entry does not exist or is expired, a new one will be loaded onto cache.
+    Get the cached entry data. If the entry does not exist or is expired, a new one will be loaded onto cache.
 
 ## Usage
 

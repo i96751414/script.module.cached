@@ -199,7 +199,7 @@ class CacheTestCase(TestCase):
     @staticmethod
     def count(cache, key):
         return cache._conn.execute(
-            "SELECT COUNT(*) FROM `{}` WHERE key = ?".format(cache._table_name), (cache._hash_func(key),)).fetchone()[0]
+            "SELECT COUNT(*) FROM `cached` WHERE key = ?", (cache._hash_func(key),)).fetchone()[0]
 
     @staticmethod
     def wait(delay, start_time=None):
