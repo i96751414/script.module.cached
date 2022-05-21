@@ -36,7 +36,8 @@ def kodi_mocks():
     xbmcaddon.Addon().getAddonInfo.return_value = DATABASE_NAME
     xbmcgui = Mock()
     xbmcgui.Window.return_value = WindowMock()
-    return {"xbmc": xbmc, "xbmcaddon": xbmcaddon, "xbmcgui": xbmcgui}
+
+    return {"xbmc": xbmc, "xbmcaddon": xbmcaddon, "xbmcgui": xbmcgui, "xbmcvfs": xbmc}
 
 
 sys.modules.update(kodi_mocks())

@@ -7,12 +7,16 @@ from datetime import datetime, timedelta
 from functools import wraps
 from hashlib import sha256
 
-import xbmc
 import xbmcaddon
 import xbmcgui
 
 PY3 = sys.version_info.major >= 3
-ADDON_DATA = xbmc.translatePath(xbmcaddon.Addon("script.module.cached").getAddonInfo("profile"))
+if PY3:
+    from xbmcvfs import translatePath
+else:
+    from xbmc import translatePath
+
+ADDON_DATA = translatePath(xbmcaddon.Addon("script.module.cached").getAddonInfo("profile"))
 ADDON_ID = xbmcaddon.Addon().getAddonInfo("id")
 
 if not PY3:
