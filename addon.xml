@@ -13,7 +13,7 @@
         <description lang="en">Cached is a Kodi python module which provide some simple caching functions.</description>
         <platform>all</platform>
         <news>
-            - Add support to Kodi 20
+- Add support to Kodi 20
         </news>
         <assets>
             <icon>icon.png</icon>
