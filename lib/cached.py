@@ -160,6 +160,10 @@ class Cache(_BaseCache):
             self.clean_up()
         return clean_up
 
+    def clear(self):
+        self._conn.execute("DELETE FROM `cached`")
+        self._last_cleanup = datetime.utcnow()
+
     def close(self):
         self._conn.close()
 

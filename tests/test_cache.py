@@ -96,6 +96,14 @@ class CacheTestCase(TestCase):
         self.assertTrue(cache.check_clean_up())
         self.assertEqual(0, self.count(cache, key))
 
+    def test_clear(self):
+        key, value = "key", "value"
+        cache = Cache(os.path.join(DATA_FOLDER, "test_clear.sqlite"))
+        cache.set(key, value, timedelta(milliseconds=100))
+        self.assertEqual(1, self.count(cache, key))
+        cache.clear()
+        self.assertEqual(0, self.count(cache, key))
+
     @with_values(Cache, MemoryCache)
     def test_cache(self, clazz):
         data = (1, "1", 1.1, True, None, {1, 3, 2, 4}, frozenset([1, 3, 2, 4]), [1, 3, 2, 4], (1, 3, 2, 4),
