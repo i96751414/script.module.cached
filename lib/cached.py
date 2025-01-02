@@ -172,16 +172,17 @@ class LoadingCache(object):
     def __init__(self, expiry_time, loader, cache_type, *args, **kwargs):
         self._expiry_time = expiry_time
         self._loader = loader
-        self._hashed_key = kwargs.pop("hashed_key", False)
         self._identifier = kwargs.pop("identifier", "")
         self._cache = cache_type(*args, **kwargs)
         self._sentinel = object()
 
-    def get(self, key):
-        data = self._cache.get(key, default=self._sentinel, hashed_key=self._hashed_key, identifier=self._identifier)
+    def get(self, *args, **kwargs):
+        # noinspection PyProtectedMember
+        key = self._cache._generate_key((args, kwargs), identifier=self._identifier)
+        data = self._cache.get(key, default=self._sentinel, hashed_key=True)
         if data is self._sentinel:
-            data = self._loader(key)
-            self._cache.set(key, data, self._expiry_time, hashed_key=self._hashed_key, identifier=self._identifier)
+            data = self._loader(*args, **kwargs)
+            self._cache.set(key, data, self._expiry_time, hashed_key=True)
         return data
 
     def close(self):
@@ -195,9 +196,8 @@ def cached(expiry_time, ignore_self=False, identifier="", cache_type=Cache):
 
         @wraps(func)
         def wrapper(*args, **kwargs):
-            key_args = args[1:] if ignore_self else args
             # noinspection PyProtectedMember
-            key = cache._generate_key((key_args, kwargs), identifier=identifier)
+            key = cache._generate_key((args[1:] if ignore_self else args, kwargs), identifier=identifier)
             result = cache.get(key, default=sentinel, hashed_key=True)
             if result is sentinel:
                 result = func(*args, **kwargs)

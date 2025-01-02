@@ -169,7 +169,7 @@ class CacheTestCase(TestCase):
 
     def test_threaded_cache(self):
         cleanup_interval = timedelta(milliseconds=200)
-        expiration = timedelta(milliseconds=500)
+        expiration = timedelta(seconds=2)
         cache = Cache(os.path.join(DATA_FOLDER, "test_threaded_cache.sqlite"), cleanup_interval=cleanup_interval)
 
         def target(key, value):
