@@ -196,8 +196,15 @@ def cached(expiry_time, ignore_self=False, identifier="", cache_type=Cache):
 
         @wraps(func)
         def wrapper(*args, **kwargs):
+            func_name = func.__name__
+            if ignore_self:
+                key_args = args[1:]
+                func_name = args[0].__class__.__name__ + "." + func_name
+            else:
+                key_args = args
+
             # noinspection PyProtectedMember
-            key = cache._generate_key((args[1:] if ignore_self else args, kwargs), identifier=identifier)
+            key = cache._generate_key((func_name, key_args, kwargs), identifier=identifier)
             result = cache.get(key, default=sentinel, hashed_key=True)
             if result is sentinel:
                 result = func(*args, **kwargs)
