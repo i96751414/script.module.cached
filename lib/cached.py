@@ -17,7 +17,9 @@ else:
     from xbmc import translatePath
 
 ADDON_DATA = translatePath(xbmcaddon.Addon("script.module.cached").getAddonInfo("profile"))
-ADDON_ID = xbmcaddon.Addon().getAddonInfo("id")
+ADDON = xbmcaddon.Addon()
+ADDON_ID = ADDON.getAddonInfo("id")
+ADDON_VERSION = ADDON.getAddonInfo("version")
 
 if not PY3:
     ADDON_DATA = ADDON_DATA.decode("utf-8")
@@ -55,8 +57,8 @@ class _BaseCache(object):
             cls.__instance = cls()
         return cls.__instance
 
-    def get(self, key, default=None, hashed_key=False, identifier=""):
-        result = self._get(self._generate_key(key, hashed_key, identifier))
+    def get(self, key, default=None, hashed_key=False, identifier=ADDON_VERSION):
+        result = self._get(self._generate_key(key, hashed_key=hashed_key, identifier=identifier))
         ret = default
         if result:
             data, expires = result
@@ -64,8 +66,10 @@ class _BaseCache(object):
                 ret = self._process(data)
         return ret
 
-    def set(self, key, data, expiry_time, hashed_key=False, identifier=""):
-        self._set(self._generate_key(key, hashed_key, identifier), self._prepare(data), datetime.utcnow() + expiry_time)
+    def set(self, key, data, expiry_time, hashed_key=False, identifier=ADDON_VERSION):
+        self._set(
+            self._generate_key(key, hashed_key=hashed_key, identifier=identifier),
+            self._prepare(data), datetime.utcnow() + expiry_time)
 
     def close(self):
         pass
@@ -172,7 +176,7 @@ class LoadingCache(object):
     def __init__(self, expiry_time, loader, cache_type, *args, **kwargs):
         self._expiry_time = expiry_time
         self._loader = loader
-        self._identifier = kwargs.pop("identifier", "")
+        self._identifier = kwargs.pop("identifier", ADDON_VERSION)
         self._cache = cache_type(*args, **kwargs)
         self._sentinel = object()
 
@@ -189,19 +193,19 @@ class LoadingCache(object):
         self._cache.close()
 
 
-def cached(expiry_time, ignore_self=False, identifier="", cache_type=Cache):
+def cached(expiry_time, instance_method=False, identifier=ADDON_VERSION, cache_type=Cache):
     def decorator(func):
         sentinel = object()
         cache = cache_type.get_instance()
 
         @wraps(func)
         def wrapper(*args, **kwargs):
-            func_name = func.__name__
-            if ignore_self:
+            if instance_method:
                 key_args = args[1:]
-                func_name = args[0].__class__.__name__ + "." + func_name
+                func_name = args[0].__class__.__name__ + "." + func.__name__
             else:
                 key_args = args
+                func_name = func.__name__
 
             # noinspection PyProtectedMember
             key = cache._generate_key((func_name, key_args, kwargs), identifier=identifier)
@@ -218,5 +222,5 @@ def cached(expiry_time, ignore_self=False, identifier="", cache_type=Cache):
 
 
 # noinspection PyTypeChecker
-def memory_cached(expiry_time, instance_method=False, identifier=""):
-    return cached(expiry_time, instance_method, identifier, MemoryCache)
+def memory_cached(expiry_time, instance_method=False, identifier=ADDON_VERSION):
+    return cached(expiry_time, instance_method=instance_method, identifier=identifier, cache_type=MemoryCache)

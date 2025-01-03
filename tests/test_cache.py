@@ -4,18 +4,18 @@ import shutil
 import string
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta, datetime
 from unittest import TestCase
 
-from concurrent.futures import ThreadPoolExecutor
-
 try:
-    from unittest.mock import Mock
+    from unittest.mock import Mock, MagicMock
 except ImportError:
     from mock import Mock
 
 DATA_FOLDER = "test_data"
 DATABASE_NAME = "test_database"
+VERSION = "1.0.0"
 
 
 def kodi_mocks():
@@ -30,10 +30,21 @@ def kodi_mocks():
         def setProperty(self, key, value):
             self._cache[key] = value
 
+    def get_addon_info(attr):
+        if attr == "version":
+            return VERSION
+        elif attr == "id":
+            return DATABASE_NAME
+        elif attr == "profile":
+            return DATA_FOLDER
+        else:
+            raise ValueError("Unexpected value: {}".format(attr))
+
     xbmc = Mock()
-    xbmc.translatePath.return_value = DATA_FOLDER
+    xbmc.translatePath = MagicMock(side_effect=lambda v: v)
     xbmcaddon = Mock()
-    xbmcaddon.Addon().getAddonInfo.return_value = DATABASE_NAME
+    addon = xbmcaddon.Addon()
+    addon.getAddonInfo = MagicMock(side_effect=get_addon_info)
     xbmcgui = Mock()
     xbmcgui.Window.return_value = WindowMock()
 
@@ -154,7 +165,7 @@ class CacheTestCase(TestCase):
                 time.sleep(func_duration)
                 return return_value
 
-            @cached(timedelta(seconds=func_duration * 2), ignore_self=True, cache_type=clazz)
+            @cached(timedelta(seconds=func_duration * 2), instance_method=True, cache_type=clazz)
             def func(self, *_, **__):
                 time.sleep(func_duration)
                 return return_value
@@ -208,7 +219,7 @@ class CacheTestCase(TestCase):
     @staticmethod
     def count(cache, key):
         return cache._conn.execute(
-            "SELECT COUNT(*) FROM `cached` WHERE key = ?", (cache._hash_func(key),)).fetchone()[0]
+            "SELECT COUNT(*) FROM `cached` WHERE key = ?", (cache._hash_func(key) + VERSION,)).fetchone()[0]
 
     @staticmethod
     def wait(delay, start_time=None):
