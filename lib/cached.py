@@ -36,6 +36,24 @@ SQLITE_SETTINGS = {
 }
 
 
+class _KwdMark(object):
+    pass
+
+
+def make_key(args, kwargs, typed=False, kwd_mark=(_KwdMark,), fast_types=(int, str)):
+    key = args
+    sorted_kwargs = tuple(sorted(kwargs.items()))
+    if sorted_kwargs:
+        key += kwd_mark + sorted_kwargs
+    if typed:
+        key += tuple(type(v) for v in args)
+        if sorted_kwargs:
+            key += tuple(type(v) for _, v in sorted_kwargs)
+    elif len(key) == 1 and type(key[0]) in fast_types:
+        return key[0]
+    return key
+
+
 def pickle_hash(obj):
     data = pickle.dumps(obj)
     # We could also use zlib.adler32 here
@@ -58,18 +76,13 @@ class _BaseCache(object):
         return cls.__instance
 
     def get(self, key, default=None, hashed_key=False, identifier=ADDON_VERSION):
-        result = self._get(self._generate_key(key, hashed_key=hashed_key, identifier=identifier))
-        ret = default
-        if result:
-            data, expires = result
-            if expires > datetime.utcnow():
-                ret = self._process(data)
-        return ret
+        return self._get(self._generate_key(key, hashed_key=hashed_key, identifier=identifier), default=default)
 
     def set(self, key, data, expiry_time, hashed_key=False, identifier=ADDON_VERSION):
-        self._set(
-            self._generate_key(key, hashed_key=hashed_key, identifier=identifier),
-            self._prepare(data), datetime.utcnow() + expiry_time)
+        return self._set(self._generate_key(key, hashed_key=hashed_key, identifier=identifier), data, expiry_time)
+
+    def remove(self, key, hashed_key=False, identifier=ADDON_VERSION):
+        return self._remove(self._generate_key(key, hashed_key=hashed_key, identifier=identifier))
 
     def close(self):
         pass
@@ -78,33 +91,44 @@ class _BaseCache(object):
         if not hashed_key:
             key = self._hash_func(key)
         if identifier:
-            key += identifier
+            key = identifier + "." + key
         return key
 
-    def _process(self, obj):
-        return obj
-
-    def _prepare(self, s):
-        return s
-
-    def _get(self, key):
+    def _get(self, key, default=None):
         raise NotImplementedError("_get needs to be implemented")
 
-    def _set(self, key, data, expires):
+    def _set(self, key, data, expiry_time):
         raise NotImplementedError("_set needs to be implemented")
+
+    def _remove(self, key):
+        raise NotImplementedError("_remove needs to be implemented")
 
 
 class MemoryCache(_BaseCache):
     def __init__(self, database=ADDON_ID):
         self._window = xbmcgui.Window(10000)
-        self._database = database + "."
+        self._database = database
 
-    def _get(self, key):
-        data = self._window.getProperty(self._database + key)
-        return self._load_func(b64decode(data)) if data else None
+    def _generate_key(self, key, hashed_key=False, identifier=""):
+        return self._database + "." + super(MemoryCache, self)._generate_key(
+            key, hashed_key=hashed_key, identifier=identifier)
 
-    def _set(self, key, data, expires):
-        self._window.setProperty(self._database + key, b64encode(self._dump_func((data, expires))).decode())
+    def _get(self, key, default=None):
+        b64_data = self._window.getProperty(key)
+        if b64_data:
+            data, expires = self._load_func(b64decode(b64_data))
+            if expires <= datetime.now():
+                self._remove(key)
+                data = default
+        else:
+            data = default
+        return data
+
+    def _set(self, key, data, expiry_time):
+        self._window.setProperty(key, b64encode(self._dump_func((data, datetime.now() + expiry_time))).decode())
+
+    def _remove(self, key):
+        self._window.clearProperty(key)
 
 
 class Cache(_BaseCache):
@@ -116,31 +140,31 @@ class Cache(_BaseCache):
             "CREATE TABLE IF NOT EXISTS `cached` ("
             "key TEXT PRIMARY KEY NOT NULL, "
             "data BLOB NOT NULL, "
-            "expires TIMESTAMP NOT NULL"
+            "expires TEXT NOT NULL"
             ")")
         # self._conn.execute('CREATE UNIQUE INDEX IF NOT EXISTS key_idx ON `{}` (key)'.format(self._table_name))
         for k, v in SQLITE_SETTINGS.items():
             self._conn.execute("PRAGMA {}={}".format(k, v))
         self._cleanup_interval = cleanup_interval
-        self._last_cleanup = datetime.utcnow()
+        self._last_cleanup = datetime.now()
         self.clean_up()
 
-    def _process(self, obj):
-        return self._load_func(obj)
-
-    def _prepare(self, s):
-        return self._dump_func(s)
-
-    def _get(self, key):
+    def _get(self, key, default=None):
         self.check_clean_up()
-        return self._conn.execute(
-            "SELECT data, expires FROM `cached` WHERE key = ?", (key,)).fetchone()
+        row = self._conn.execute(
+            "SELECT data FROM `cached` WHERE key = ? AND expires > STRFTIME('%Y-%m-%d %H:%M:%f', 'NOW')",
+            (key,)).fetchone()
+        return default if row is None else self._load_func(row[0])
 
-    def _set(self, key, data, expires):
+    def _set(self, key, data, expiry_time):
         self.check_clean_up()
         self._conn.execute(
-            "INSERT OR REPLACE INTO `cached` (key, data, expires) VALUES(?, ?, ?)",
-            (key, sqlite3.Binary(data), expires))
+            "INSERT OR REPLACE INTO `cached` (key, data, expires) VALUES(?, ?, STRFTIME('%Y-%m-%d %H:%M:%f', 'NOW', ?))",
+            (key, sqlite3.Binary(self._dump_func(data)), "+{:.3f} seconds".format(expiry_time.total_seconds())))
+
+    def _remove(self, key):
+        self.check_clean_up()
+        self._conn.execute("DELETE FROM `cached` WHERE key = ?", (key,))
 
     def _set_version(self, version):
         self._conn.execute("PRAGMA user_version={}".format(version))
@@ -151,12 +175,12 @@ class Cache(_BaseCache):
 
     @property
     def needs_cleanup(self):
-        return self._last_cleanup + self._cleanup_interval < datetime.utcnow()
+        return self._last_cleanup + self._cleanup_interval < datetime.now()
 
     def clean_up(self):
         self._conn.execute(
             "DELETE FROM `cached` WHERE expires <= STRFTIME('%Y-%m-%d %H:%M:%f', 'NOW')")
-        self._last_cleanup = datetime.utcnow()
+        self._last_cleanup = datetime.now()
 
     def check_clean_up(self):
         clean_up = self.needs_cleanup
@@ -166,7 +190,7 @@ class Cache(_BaseCache):
 
     def clear(self):
         self._conn.execute("DELETE FROM `cached`")
-        self._last_cleanup = datetime.utcnow()
+        self._last_cleanup = datetime.now()
 
     def close(self):
         self._conn.close()
@@ -181,12 +205,11 @@ class LoadingCache(object):
         self._sentinel = object()
 
     def get(self, *args, **kwargs):
-        # noinspection PyProtectedMember
-        key = self._cache._generate_key((args, kwargs), identifier=self._identifier)
-        data = self._cache.get(key, default=self._sentinel, hashed_key=True)
+        key = make_key(args, kwargs)
+        data = self._cache.get(key, default=self._sentinel, identifier=self._identifier)
         if data is self._sentinel:
             data = self._loader(*args, **kwargs)
-            self._cache.set(key, data, self._expiry_time, hashed_key=True)
+            self._cache.set(key, data, self._expiry_time, identifier=self._identifier)
         return data
 
     def close(self):
@@ -207,12 +230,11 @@ def cached(expiry_time, instance_method=False, identifier=ADDON_VERSION, cache_t
                 key_args = args
                 func_name = func.__name__
 
-            # noinspection PyProtectedMember
-            key = cache._generate_key((func_name, key_args, kwargs), identifier=identifier)
-            result = cache.get(key, default=sentinel, hashed_key=True)
+            key = make_key((func_name, *key_args), kwargs)
+            result = cache.get(key, default=sentinel, identifier=identifier)
             if result is sentinel:
                 result = func(*args, **kwargs)
-                cache.set(key, result, expiry_time, hashed_key=True)
+                cache.set(key, result, expiry_time, identifier=identifier)
 
             return result
 

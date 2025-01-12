@@ -11,7 +11,7 @@ from unittest import TestCase
 try:
     from unittest.mock import Mock, MagicMock
 except ImportError:
-    from mock import Mock
+    from mock import Mock, MagicMock
 
 DATA_FOLDER = "test_data"
 DATABASE_NAME = "test_database"
@@ -22,13 +22,17 @@ def kodi_mocks():
     # noinspection PyPep8Naming
     class WindowMock(object):
         def __init__(self):
-            self._cache = {}
+            self.cache = {}
+            self.cleared_properties = set()
 
         def getProperty(self, key):
-            return self._cache.get(key, "")
+            return self.cache.get(key, "")
 
         def setProperty(self, key, value):
-            self._cache[key] = value
+            self.cache[key] = value
+
+        def clearProperty(self, key):
+            self.cleared_properties.add(key)
 
     def get_addon_info(attr):
         if attr == "version":
@@ -219,7 +223,8 @@ class CacheTestCase(TestCase):
     @staticmethod
     def count(cache, key):
         return cache._conn.execute(
-            "SELECT COUNT(*) FROM `cached` WHERE key = ?", (cache._hash_func(key) + VERSION,)).fetchone()[0]
+            "SELECT COUNT(*) FROM `cached` WHERE key = ?",
+            (cache._generate_key(key, identifier=VERSION),)).fetchone()[0]
 
     @staticmethod
     def wait(delay, start_time=None):
