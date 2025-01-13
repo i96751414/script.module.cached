@@ -159,7 +159,8 @@ class Cache(_BaseCache):
     def _set(self, key, data, expiry_time):
         self.check_clean_up()
         self._conn.execute(
-            "INSERT OR REPLACE INTO `cached` (key, data, expires) VALUES(?, ?, STRFTIME('%Y-%m-%d %H:%M:%f', 'NOW', ?))",
+            "INSERT OR REPLACE INTO `cached` (key, data, expires) "
+            "VALUES(?, ?, STRFTIME('%Y-%m-%d %H:%M:%f', 'NOW', ?))",
             (key, sqlite3.Binary(self._dump_func(data)), "+{:.3f} seconds".format(expiry_time.total_seconds())))
 
     def _remove(self, key):
