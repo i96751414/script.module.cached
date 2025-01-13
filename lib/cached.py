@@ -3,7 +3,7 @@ import pickle
 import sqlite3
 import sys
 from base64 import b64encode, b64decode
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, tzinfo
 from functools import wraps
 from hashlib import sha256
 
@@ -62,12 +62,23 @@ def pickle_hash(obj):
     return h.hexdigest()
 
 
+class UTC(tzinfo):
+    _zero = timedelta(0)
+
+    def tzname(self, dt):
+        return "UTC"
+
+    def utcoffset(self, dt):
+        return self._zero
+
+    def dst(self, dt):
+        return self._zero
+
+
 class _BaseCache(object):
     __instance = None
 
-    _load_func = staticmethod(pickle.loads)
-    _dump_func = staticmethod(pickle.dumps)
-    _hash_func = staticmethod(pickle_hash)
+    _timezone = UTC()
 
     @classmethod
     def get_instance(cls):
@@ -78,8 +89,8 @@ class _BaseCache(object):
     def get(self, key, default=None, hashed_key=False, identifier=ADDON_VERSION):
         return self._get(self._generate_key(key, hashed_key=hashed_key, identifier=identifier), default=default)
 
-    def set(self, key, data, expiry_time, hashed_key=False, identifier=ADDON_VERSION):
-        return self._set(self._generate_key(key, hashed_key=hashed_key, identifier=identifier), data, expiry_time)
+    def set(self, key, data, ttl, hashed_key=False, identifier=ADDON_VERSION):
+        return self._set(self._generate_key(key, hashed_key=hashed_key, identifier=identifier), data, ttl)
 
     def remove(self, key, hashed_key=False, identifier=ADDON_VERSION):
         return self._remove(self._generate_key(key, hashed_key=hashed_key, identifier=identifier))
@@ -89,15 +100,30 @@ class _BaseCache(object):
 
     def _generate_key(self, key, hashed_key=False, identifier=""):
         if not hashed_key:
-            key = self._hash_func(key)
+            key = self._hash(key)
         if identifier:
             key = identifier + "." + key
         return key
 
+    def _now(self):
+        return datetime.now(self._timezone)
+
+    @staticmethod
+    def _loads(data):
+        return pickle.loads(data)
+
+    @staticmethod
+    def _dumps(data):
+        return pickle.dumps(data)
+
+    @staticmethod
+    def _hash(data):
+        return pickle_hash(data)
+
     def _get(self, key, default=None):
         raise NotImplementedError("_get needs to be implemented")
 
-    def _set(self, key, data, expiry_time):
+    def _set(self, key, data, ttl):
         raise NotImplementedError("_set needs to be implemented")
 
     def _remove(self, key):
@@ -116,16 +142,16 @@ class MemoryCache(_BaseCache):
     def _get(self, key, default=None):
         b64_data = self._window.getProperty(key)
         if b64_data:
-            data, expires = self._load_func(b64decode(b64_data))
-            if expires <= datetime.now():
+            data, expires = self._loads(b64decode(b64_data))
+            if expires <= self._now():
                 self._remove(key)
                 data = default
         else:
             data = default
         return data
 
-    def _set(self, key, data, expiry_time):
-        self._window.setProperty(key, b64encode(self._dump_func((data, datetime.now() + expiry_time))).decode())
+    def _set(self, key, data, ttl):
+        self._window.setProperty(key, b64encode(self._dumps((data, self._now() + ttl))).decode())
 
     def _remove(self, key):
         self._window.clearProperty(key)
@@ -146,7 +172,7 @@ class Cache(_BaseCache):
         for k, v in SQLITE_SETTINGS.items():
             self._conn.execute("PRAGMA {}={}".format(k, v))
         self._cleanup_interval = cleanup_interval
-        self._last_cleanup = datetime.now()
+        self._last_cleanup = self._now()
         self.clean_up()
 
     def _get(self, key, default=None):
@@ -154,14 +180,14 @@ class Cache(_BaseCache):
         row = self._conn.execute(
             "SELECT data FROM `cached` WHERE key = ? AND expires > STRFTIME('%Y-%m-%d %H:%M:%f', 'NOW')",
             (key,)).fetchone()
-        return default if row is None else self._load_func(row[0])
+        return default if row is None else self._loads(row[0])
 
-    def _set(self, key, data, expiry_time):
+    def _set(self, key, data, ttl):
         self.check_clean_up()
         self._conn.execute(
             "INSERT OR REPLACE INTO `cached` (key, data, expires) "
             "VALUES(?, ?, STRFTIME('%Y-%m-%d %H:%M:%f', 'NOW', ?))",
-            (key, sqlite3.Binary(self._dump_func(data)), "+{:.3f} seconds".format(expiry_time.total_seconds())))
+            (key, sqlite3.Binary(self._dumps(data)), "+{:.3f} seconds".format(ttl.total_seconds())))
 
     def _remove(self, key):
         self.check_clean_up()
@@ -176,12 +202,12 @@ class Cache(_BaseCache):
 
     @property
     def needs_cleanup(self):
-        return self._last_cleanup + self._cleanup_interval < datetime.now()
+        return self._last_cleanup + self._cleanup_interval < self._now()
 
     def clean_up(self):
         self._conn.execute(
             "DELETE FROM `cached` WHERE expires <= STRFTIME('%Y-%m-%d %H:%M:%f', 'NOW')")
-        self._last_cleanup = datetime.now()
+        self._last_cleanup = self._now()
 
     def check_clean_up(self):
         clean_up = self.needs_cleanup
@@ -191,15 +217,15 @@ class Cache(_BaseCache):
 
     def clear(self):
         self._conn.execute("DELETE FROM `cached`")
-        self._last_cleanup = datetime.now()
+        self._last_cleanup = self._now()
 
     def close(self):
         self._conn.close()
 
 
 class LoadingCache(object):
-    def __init__(self, expiry_time, loader, cache_type, *args, **kwargs):
-        self._expiry_time = expiry_time
+    def __init__(self, ttl, loader, cache_type, *args, **kwargs):
+        self._ttl = ttl
         self._loader = loader
         self._identifier = kwargs.pop("identifier", ADDON_VERSION)
         self._cache = cache_type(*args, **kwargs)
@@ -210,14 +236,14 @@ class LoadingCache(object):
         data = self._cache.get(key, default=self._sentinel, identifier=self._identifier)
         if data is self._sentinel:
             data = self._loader(*args, **kwargs)
-            self._cache.set(key, data, self._expiry_time, identifier=self._identifier)
+            self._cache.set(key, data, self._ttl, identifier=self._identifier)
         return data
 
     def close(self):
         self._cache.close()
 
 
-def cached(expiry_time, instance_method=False, identifier=ADDON_VERSION, cache_type=Cache):
+def cached(ttl, instance_method=False, identifier=ADDON_VERSION, cache_type=Cache):
     def decorator(func):
         sentinel = object()
         cache = cache_type.get_instance()
@@ -235,7 +261,7 @@ def cached(expiry_time, instance_method=False, identifier=ADDON_VERSION, cache_t
             result = cache.get(key, default=sentinel, identifier=identifier)
             if result is sentinel:
                 result = func(*args, **kwargs)
-                cache.set(key, result, expiry_time, identifier=identifier)
+                cache.set(key, result, ttl, identifier=identifier)
 
             return result
 
@@ -245,5 +271,5 @@ def cached(expiry_time, instance_method=False, identifier=ADDON_VERSION, cache_t
 
 
 # noinspection PyTypeChecker
-def memory_cached(expiry_time, instance_method=False, identifier=ADDON_VERSION):
-    return cached(expiry_time, instance_method=instance_method, identifier=identifier, cache_type=MemoryCache)
+def memory_cached(ttl, instance_method=False, identifier=ADDON_VERSION):
+    return cached(ttl, instance_method=instance_method, identifier=identifier, cache_type=MemoryCache)
